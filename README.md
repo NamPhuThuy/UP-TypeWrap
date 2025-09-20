@@ -25,7 +25,7 @@ This library utilizes Roslyn Source Generator to generate type wrappers for any 
 
     ![add package by git url](imgs/add-package-by-git-url-1.png)
 
-3. Enter the package URL `https://github.com/laicasaane/TypeWrap/tree/main/Packages/TypeWrap`.
+3. Enter the package URL `https://github.com/laicasaane/TypeWrap/tree/main/Packages/com.laicasaane.typewrap`.
 
 ![enter git url then press add button](imgs/add-package-by-git-url-2.png)
 
@@ -81,16 +81,10 @@ public readonly partial record struct Coord2D(Vector2Int _);
 #### Notes
 
 - To have `record` in Unity, you need to use Unity 2022.3 or later, and enable `C# 10` feature by placing this `csc.rsp` file in your `Assets` folder:
-    https://github.com/laicasaane/TypeWrap/blob/main/Assets/csc.rsp
+    https://github.com/laicasaane/TypeWrap/blob/432227c93a982ad3778e1b8c272a2e1130fbba1c/Assets/csc.rsp
 
-- To have `readonly record` in any assembly (or `.asmdef`), you have to declare this class inside that assembly:
-    ```cs
-    namespace System.Runtime.CompilerServices
-    {
-        [ComponentModel.EditorBrowsable(ComponentModel.EditorBrowsableState.Never)]
-        class IsExternalInit { }
-    }
-    ```
+- To have `readonly record` in any assembly (or `.asmdef`), you have to copy this file into that assembly (or the core one referenced by every other assemblies):
+    https://github.com/laicasaane/TypeWrap/blob/432227c93a982ad3778e1b8c272a2e1130fbba1c/Packages/com.laicasaane.typewrap/Samples~/TypeWrap.Samples/IsExternalInit.cs
 
 - You might also want to place this file in your `Assets` **and** the root of your project to enable the `C# 10` feature for the code editor:
-    https://github.com/laicasaane/TypeWrap/blob/main/Directory.Build.props
+    https://github.com/laicasaane/TypeWrap/blob/432227c93a982ad3778e1b8c272a2e1130fbba1c/Directory.Build.props
