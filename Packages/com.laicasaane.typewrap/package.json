@@ -1,0 +1,15 @@
+{
+  "name": "com.laicasaane.typewrap",
+  "displayName": "TypeWrap",
+  "version": "1.1.0",
+  "unity": "2022.3",
+  "documentationUrl": "https://github.com/laicasaane/TypeWrap/blob/main/README.md",
+  "type": "library",
+  "samples": [
+    {
+      "displayName": "TypeWrap.Samples",
+      "description": "Contains sample usage for type wraps",
+      "path": "Samples~/TypeWrap.Samples"
+    }
+  ]
+}

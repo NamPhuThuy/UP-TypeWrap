@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="TypeWrap.SourceGen/TypeWrap.SourceGen.csproj" />
+  <Project Path="TypeWrapTest/TypeWrapTest.csproj" />
+</Solution>

@@ -1,0 +1,16 @@
+﻿{
+    "name": "TypeWrap.Samples",
+    "rootNamespace": "TypeWrap.Samples",
+    "references": [
+        "TypeWrap"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
