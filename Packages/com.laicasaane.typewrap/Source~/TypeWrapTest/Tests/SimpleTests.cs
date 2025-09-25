@@ -10,7 +10,7 @@ namespace TypeWrapTest
     {
         public readonly override int GetHashCode()
         {
-            return value.GetHashCode();
+            return valueOfInt32.GetHashCode();
         }
     }
 

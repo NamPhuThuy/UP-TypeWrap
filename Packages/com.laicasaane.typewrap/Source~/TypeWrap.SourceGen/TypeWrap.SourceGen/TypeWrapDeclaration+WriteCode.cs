@@ -79,13 +79,22 @@ namespace TypeWrap.SourceGen
         {
             p = p.IncreasedIndent();
 
-            if (ImplementInterfaces.HasFlag(InterfaceKind.Equatable))
+            if (ImplementInterfaces.HasFlag(InterfaceKind.EquatableT))
             {
                 p.PrintBeginLine(", ").Print("global::System.IEquatable<").Print(FullTypeName).PrintEndLine(">");
                 p.PrintBeginLine(", ").Print("global::System.IEquatable<").Print(FieldTypeName).PrintEndLine(">");
             }
 
-            if (ImplementInterfaces.HasFlag(InterfaceKind.Comparable))
+            var hasCompareToT = ImplementInterfaces.HasFlag(InterfaceKind.ComparableT);
+            var hasCompareTo = ImplementInterfaces.HasFlag(InterfaceKind.Comparable)
+                && ImplementSpecialMethods.HasFlag(SpecialMethodType.CompareTo);
+
+            if (hasCompareToT || hasCompareTo)
+            {
+                p.PrintBeginLine(", ").PrintEndLine("global::System.IComparable");
+            }
+
+            if (ImplementInterfaces.HasFlag(InterfaceKind.ComparableT))
             {
                 p.PrintBeginLine(", ").Print("global::System.IComparable<").Print(FullTypeName).PrintEndLine(">");
                 p.PrintBeginLine(", ").Print("global::System.IComparable<").Print(FieldTypeName).PrintEndLine(">");
@@ -103,7 +112,7 @@ namespace TypeWrap.SourceGen
 
             p.PrintLine(GENERATED_CODE);
             p.PrintBeginLine("public ")
-                .PrintIf(IsReadOnly, "readonly ")
+                .PrintIf(IsReadOnly || IsStruct == false, "readonly ")
                 .Print(FieldTypeName)
                 .Print(" ")
                 .Print(FieldName)
@@ -201,12 +210,14 @@ namespace TypeWrap.SourceGen
             }
             else
             {
-                if (field.IsReadOnly && sameType)
+                var isReadOnly = IsReadOnly || field.IsReadOnly;
+
+                if (isReadOnly && sameType)
                 {
                     p.PrintLine(GENERATED_CODE);
                     p.PrintLine($"public readonly {FullTypeName} {name} = new {FullTypeName}(this.{FieldName}.{name});");
                 }
-                else if (field.IsReadOnly)
+                else if (isReadOnly)
                 {
                     p.PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
                     p.PrintLine($"public {returnTypeName} {name}");
@@ -274,13 +285,38 @@ namespace TypeWrap.SourceGen
             var isPublic = property.DeclaredAccessibility == Accessibility.Public;
             var wrapperIsStruct = IsStruct;
             var wrapperIsReadOnly = IsReadOnly;
-            var fieldTypeIsStruct = FieldTypeSymbol.TypeKind == TypeKind.Struct;
+            var fieldTypeIsReadOnly = FieldTypeSymbol.IsReadOnly;
 
             p.PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
             p.PrintBeginLineIf(isPublic, "public ", "");
             p.PrintIf(property.IsStatic, "static ");
-            p.PrintIf(property.RefKind == RefKind.Ref, "ref ");
-            p.PrintIf(property.RefKind == RefKind.RefReadOnly, "ref readonly ");
+
+            var withoutSetter = property.SetMethod is not IMethodSymbol setter
+                || setter.IsInitOnly
+                || (fieldTypeIsReadOnly == false && wrapperIsStruct && wrapperIsReadOnly)
+                ;
+
+            var getterSetterCanBeReadOnly = IsStruct && withoutSetter == false && property.IsStatic;
+
+            if (property.RefKind == RefKind.RefReadOnly)
+            {
+                getterSetterCanBeReadOnly = false;
+                p.Print("ref readonly ");
+            }
+            else if (property.RefKind == RefKind.Ref)
+            {
+                p.Print("ref ");
+            }
+            else if (IsStruct && property.IsStatic == false)
+            {
+                if (property.IsReadOnly
+                    || (withoutSetter && property.GetMethod is IMethodSymbol getter && getter.IsReadOnly)
+                )
+                {
+                    getterSetterCanBeReadOnly = false;
+                    p.Print("readonly ");
+                }
+            }
 
             var isRef = property.RefKind is RefKind.Ref or RefKind.RefReadOnly;
             var canConvertType = wrapperIsStruct && sameType && isRef == false;
@@ -345,9 +381,8 @@ namespace TypeWrap.SourceGen
                         , property
                         , accessor
                         , isRef
-                        , wrapperIsStruct
-                        , wrapperIsReadOnly
-                        , fieldTypeIsStruct
+                        , getterSetterCanBeReadOnly
+                        , withoutSetter
                     );
                 }
                 else
@@ -358,9 +393,8 @@ namespace TypeWrap.SourceGen
                         , accessor
                         , name
                         , isRef
-                        , wrapperIsStruct
-                        , wrapperIsReadOnly
-                        , fieldTypeIsStruct
+                        , getterSetterCanBeReadOnly
+                        , withoutSetter
                     );
                 }
             }
@@ -372,9 +406,8 @@ namespace TypeWrap.SourceGen
                 , IPropertySymbol property
                 , string accessor
                 , bool isRef
-                , bool wrapperIsStruct
-                , bool wrapperIsReadOnly
-                , bool fieldTypeIsStruct
+                , bool getterSetterCanBeReadOnly
+                , bool withoutSetter
             )
             {
                 if (property.GetMethod != null)
@@ -384,8 +417,20 @@ namespace TypeWrap.SourceGen
 
                     p.PrintLine(AGGRESSIVE_INLINING);
                     p.PrintBeginLine();
-                    p.PrintIf(isGetterRef, "ref ");
-                    p.PrintIf(isGetterRefRO, "ref readonly ");
+
+                    if (getterSetterCanBeReadOnly && isGetterRefRO)
+                    {
+                        p.Print("ref readonly ");
+                    }
+                    else if (isGetterRef)
+                    {
+                        p.Print("ref ");
+                    }
+                    else if (getterSetterCanBeReadOnly && property.GetMethod.IsReadOnly)
+                    {
+                        p.Print("readonly ");
+                    }
+
                     p.Print("get => ");
                     p.PrintIf(isRef, "ref ");
                     p.Print(accessor).Print("[");
@@ -395,24 +440,17 @@ namespace TypeWrap.SourceGen
                     p.PrintEndLine();
                 }
 
-                if (fieldTypeIsStruct || (wrapperIsStruct && wrapperIsReadOnly))
+                if (withoutSetter)
                 {
                     return;
                 }
 
-                if (property.SetMethod != null)
-                {
-                    var isSetterRef = property.RefKind != RefKind.Ref && property.SetMethod.RefKind == RefKind.Ref;
-                    var isSetterRefRO = property.RefKind != RefKind.RefReadOnly && property.SetMethod.RefKind == RefKind.RefReadOnly;
-
-                    p.PrintLine(AGGRESSIVE_INLINING);
-                    p.PrintBeginLine();
-                    p.PrintIf(isSetterRef, "ref ");
-                    p.PrintIf(isSetterRefRO, "ref readonly ");
-                    p.Print("set => ").Print(accessor).Print("[");
-                    WriteIndexerParams(ref p, property);
-                    p.PrintEndLine("] = value;");
-                }
+                p.PrintLine(AGGRESSIVE_INLINING);
+                p.PrintBeginLine();
+                p.PrintIf(getterSetterCanBeReadOnly && property.SetMethod.IsReadOnly, "readonly ");
+                p.Print("set => ").Print(accessor).Print("[");
+                WriteIndexerParams(ref p, property);
+                p.PrintEndLine("] = value;");
             }
 
             static void WritePropertyBody(
@@ -421,9 +459,8 @@ namespace TypeWrap.SourceGen
                 , string accessor
                 , string propName
                 , bool isRef
-                , bool wrapperIsStruct
-                , bool wrapperIsReadOnly
-                , bool fieldTypeIsStruct
+                , bool getterSetterCanBeReadOnly
+                , bool withoutSetter
             )
             {
                 if (property.GetMethod != null)
@@ -433,8 +470,20 @@ namespace TypeWrap.SourceGen
 
                     p.PrintLine(AGGRESSIVE_INLINING);
                     p.PrintBeginLine();
-                    p.PrintIf(isGetterRef, "ref ");
-                    p.PrintIf(isGetterRefRO, "ref readonly ");
+
+                    if (getterSetterCanBeReadOnly && isGetterRefRO)
+                    {
+                        p.Print("ref readonly ");
+                    }
+                    else if (isGetterRef)
+                    {
+                        p.Print("ref ");
+                    }
+                    else if (getterSetterCanBeReadOnly && property.GetMethod.IsReadOnly)
+                    {
+                        p.Print("readonly ");
+                    }
+
                     p.Print("get => ");
                     p.PrintIf(isRef, "ref ");
 
@@ -442,22 +491,15 @@ namespace TypeWrap.SourceGen
                     p.Print(";").PrintEndLine().PrintEndLine();
                 }
 
-                if (fieldTypeIsStruct || (wrapperIsStruct && wrapperIsReadOnly))
+                if (withoutSetter)
                 {
                     return;
                 }
 
-                if (property.SetMethod != null)
-                {
-                    var isSetterRef = property.RefKind != RefKind.Ref && property.SetMethod.RefKind == RefKind.Ref;
-                    var isSetterRefRO = property.RefKind != RefKind.RefReadOnly && property.SetMethod.RefKind == RefKind.RefReadOnly;
-
-                    p.PrintLine(AGGRESSIVE_INLINING);
-                    p.PrintBeginLine();
-                    p.PrintIf(isSetterRef, "ref ");
-                    p.PrintIf(isSetterRefRO, "ref readonly ");
-                    p.PrintEndLine($"set => {accessor}.{propName} = value;");
-                }
+                p.PrintLine(AGGRESSIVE_INLINING);
+                p.PrintBeginLine();
+                p.PrintIf(getterSetterCanBeReadOnly && property.SetMethod.IsReadOnly, "readonly ");
+                p.PrintEndLine($"set => {accessor}.{propName} = value;");
             }
 
             static void WriteIndexerParams(ref Printer p, IPropertySymbol property)
@@ -549,93 +591,6 @@ namespace TypeWrap.SourceGen
             }
 
             WriteAdditionalMethods(ref p);
-        }
-
-        private void WriteAdditionalMethods(ref Printer p)
-        {
-            if (IgnoreInterfaces.HasFlag(InterfaceKind.Comparable) == false
-                && ImplementInterfaces.HasFlag(InterfaceKind.Comparable)
-            )
-            {
-                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
-                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ", "virtual ")
-                    .Print("int CompareTo(").Print(FullTypeName).PrintEndLine(" other)");
-                p = p.IncreasedIndent();
-                {
-                    p.PrintBeginLine("=> this.").Print(FieldName).Print(".CompareTo(other.").Print(FieldName).PrintEndLine(");");
-                }
-                p = p.DecreasedIndent();
-                p.PrintEndLine();
-            }
-
-            if (IsStruct == false && IsRecord)
-            {
-                return;
-            }
-
-            if (IgnoreInterfaces.HasFlag(InterfaceKind.Equatable) == false
-                && (ImplementOperators.HasFlag(OperatorKind.Equal)
-                || ImplementInterfaces.HasFlag(InterfaceKind.Equatable)
-            ))
-            {
-                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
-                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ", "virtual ")
-                    .Print("bool Equals(").Print(FullTypeName).PrintEndLine(" other)");
-                p = p.IncreasedIndent();
-                {
-                    if (ImplementOperators.HasFlag(OperatorKind.Equal))
-                    {
-                        p.PrintBeginLine("=> this.").Print(FieldName).Print(" == other.").Print(FieldName).PrintEndLine(";");
-                    }
-                    else
-                    {
-                        p.PrintBeginLine("=> this.").Print(FieldName).Print(".Equals(other.").Print(FieldName).PrintEndLine(");");
-                    }
-                }
-                p = p.DecreasedIndent();
-                p.PrintEndLine();
-            }
-
-            if (_writenSpecialMethods.HasFlag(SpecialMethodType.GetHashCode) == false
-                && ImplementSpecialMethods.HasFlag(SpecialMethodType.GetHashCode)
-                && IsRefStruct == false
-            )
-            {
-                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
-                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ").PrintEndLine("override int GetHashCode()");
-                p = p.IncreasedIndent();
-                {
-                    p.PrintBeginLine("=> this.").Print(FieldName).PrintEndLine(".GetHashCode();");
-                }
-                p = p.DecreasedIndent();
-                p.PrintEndLine();
-            }
-
-            if (_writenSpecialMethods.HasFlag(SpecialMethodType.ToString) == false
-                && ImplementSpecialMethods.HasFlag(SpecialMethodType.ToString)
-                && IsRefStruct == false
-            )
-            {
-                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
-                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ").PrintEndLine("override string ToString()");
-                p = p.IncreasedIndent();
-                {
-                    p.PrintBeginLine("=> this.").Print(FieldName).PrintEndLine(".ToString();");
-                }
-                p = p.DecreasedIndent();
-                p.PrintEndLine();
-            }
-
-            if (IsRefStruct)
-            {
-                p.PrintLine(OBSOLETE_REF_STRUCT);
-                p.PrintLine("public override int GetHashCode() => throw null;");
-                p.PrintEndLine();
-
-                p.PrintLine(OBSOLETE_REF_STRUCT);
-                p.PrintLine("public override bool Equals(object other) => throw null;");
-                p.PrintEndLine();
-            }
         }
 
         private void WriteMethod(ref Printer p, IMethodSymbol method)
@@ -850,6 +805,144 @@ namespace TypeWrap.SourceGen
                         p = p.DecreasedIndent();
                     }
                 }
+            }
+        }
+
+        private void WriteAdditionalMethods(ref Printer p)
+        {
+            var hasCompareToT = IgnoreInterfaceMethods.HasFlag(InterfaceKind.ComparableT) == false
+                && ImplementInterfaces.HasFlag(InterfaceKind.ComparableT);
+
+            if (hasCompareToT)
+            {
+                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
+                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ", "virtual ")
+                    .Print("int CompareTo(").Print(FullTypeName).PrintEndLine(" other)");
+                p = p.IncreasedIndent();
+                {
+                    p.PrintBeginLine("=> this.").Print(FieldName).Print(".CompareTo(other.").Print(FieldName).PrintEndLine(");");
+                }
+                p = p.DecreasedIndent();
+                p.PrintEndLine();
+            }
+
+            var hasCompareTo = IgnoreInterfaceMethods.HasFlag(InterfaceKind.Comparable) == false
+                && ImplementInterfaces.HasFlag(InterfaceKind.Comparable)
+                && ImplementSpecialMethods.HasFlag(SpecialMethodType.CompareTo);
+
+            if ((hasCompareToT || hasCompareTo) && IsRefStruct == false)
+            {
+                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
+                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ").PrintEndLine("int CompareTo(object obj)");
+                p = p.IncreasedIndent();
+                {
+                    p.PrintLine("=> obj switch");
+                    p.OpenScope();
+                    {
+                        p.PrintBeginLine(TypeName).PrintEndLine(" other => CompareTo(other),");
+                        p.PrintBeginLine(FieldTypeName).Print(" other => this.").Print(FieldName).PrintEndLine(".CompareTo(other),");
+                        p.PrintLine("_ => 1,");
+                    }
+                    p.CloseScope("};");
+                }
+                p = p.DecreasedIndent();
+                p.PrintEndLine();
+            }
+
+            if (IsStruct == false && IsRecord)
+            {
+                return;
+            }
+
+            if (IgnoreInterfaceMethods.HasFlag(InterfaceKind.EquatableT) == false
+                && (ImplementOperators.HasFlag(OperatorKind.Equal)
+                || ImplementInterfaces.HasFlag(InterfaceKind.EquatableT)
+            ))
+            {
+                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
+                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ", "virtual ")
+                    .Print("bool Equals(").Print(FullTypeName).PrintEndLine(" other)");
+                p = p.IncreasedIndent();
+                {
+                    if (ImplementOperators.HasFlag(OperatorKind.Equal))
+                    {
+                        p.PrintBeginLine("=> this.").Print(FieldName).Print(" == other.").Print(FieldName).PrintEndLine(";");
+                    }
+                    else
+                    {
+                        p.PrintBeginLine("=> this.").Print(FieldName).Print(".Equals(other.").Print(FieldName).PrintEndLine(");");
+                    }
+                }
+                p = p.DecreasedIndent();
+                p.PrintEndLine();
+            }
+
+            var hasEquals = IgnoreInterfaceMethods.HasFlag(InterfaceKind.EquatableT)
+                || ImplementOperators.HasFlag(OperatorKind.Equal)
+                || ImplementInterfaces.HasFlag(InterfaceKind.EquatableT);
+
+            if (IsRecord == false
+                && hasEquals
+                && ImplementSpecialMethods.HasFlag(SpecialMethodType.Equals)
+                && IsRefStruct == false
+            )
+            {
+                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
+                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ").PrintEndLine("override bool Equals(object obj)");
+                p = p.IncreasedIndent();
+                {
+                    p.PrintLine("=> obj switch");
+                    p.OpenScope();
+                    {
+                        p.PrintBeginLine(TypeName).PrintEndLine(" other => Equals(other),");
+                        p.PrintBeginLine(FieldTypeName).Print(" other => this.").Print(FieldName).PrintEndLine(".Equals(other),");
+                        p.PrintLine("_ => false,");
+                    }
+                    p.CloseScope("};");
+                }
+                p = p.DecreasedIndent();
+                p.PrintEndLine();
+            }
+
+            if (_writenSpecialMethods.HasFlag(SpecialMethodType.GetHashCode) == false
+                && ImplementSpecialMethods.HasFlag(SpecialMethodType.GetHashCode)
+                && IsRefStruct == false
+            )
+            {
+                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
+                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ").PrintEndLine("override int GetHashCode()");
+                p = p.IncreasedIndent();
+                {
+                    p.PrintBeginLine("=> this.").Print(FieldName).PrintEndLine(".GetHashCode();");
+                }
+                p = p.DecreasedIndent();
+                p.PrintEndLine();
+            }
+
+            if (_writenSpecialMethods.HasFlag(SpecialMethodType.ToString) == false
+                && ImplementSpecialMethods.HasFlag(SpecialMethodType.ToString)
+                && IsRefStruct == false
+            )
+            {
+                p.PrintLine(AGGRESSIVE_INLINING).PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
+                p.PrintBeginLine("public ").PrintIf(IsStruct, "readonly ").PrintEndLine("override string ToString()");
+                p = p.IncreasedIndent();
+                {
+                    p.PrintBeginLine("=> this.").Print(FieldName).PrintEndLine(".ToString();");
+                }
+                p = p.DecreasedIndent();
+                p.PrintEndLine();
+            }
+
+            if (IsRefStruct)
+            {
+                p.PrintLine(OBSOLETE_REF_STRUCT);
+                p.PrintLine("public override int GetHashCode() => throw null;");
+                p.PrintEndLine();
+
+                p.PrintLine(OBSOLETE_REF_STRUCT);
+                p.PrintLine("public override bool Equals(object other) => throw null;");
+                p.PrintEndLine();
             }
         }
 
@@ -1206,6 +1299,8 @@ namespace TypeWrap.SourceGen
                     case OperatorKind.LogicalXor:
                     case OperatorKind.Equal:
                     case OperatorKind.NotEqual:
+                    case OperatorKind.EqualCustom:
+                    case OperatorKind.NotEqualCustom:
                     case OperatorKind.Greater:
                     case OperatorKind.Lesser:
                     case OperatorKind.GreaterEqual:
@@ -1373,6 +1468,8 @@ namespace TypeWrap.SourceGen
                 OperatorKind.UnsignedRightShift => ">>>",
                 OperatorKind.Equal => "==",
                 OperatorKind.NotEqual => "!=",
+                OperatorKind.EqualCustom => "==",
+                OperatorKind.NotEqualCustom => "!=",
                 OperatorKind.Greater => ">",
                 OperatorKind.Lesser => "<",
                 OperatorKind.GreaterEqual => ">=",
@@ -1393,7 +1490,7 @@ namespace TypeWrap.SourceGen
             p.OpenScope();
             {
                 p.PrintLine($"private static readonly global::System.Type s_wrapperType = typeof({FullTypeName});");
-                p.PrintLine($"private static readonly global::System.Type s_valueType = typeof({FieldTypeName});");
+                p.PrintLine($"private static readonly global::System.Type s_underlyingType = typeof({FieldTypeName});");
 
                 p.PrintEndLine();
 
@@ -1401,7 +1498,7 @@ namespace TypeWrap.SourceGen
                 p.PrintLine($"public override bool CanConvertFrom(global::System.ComponentModel.ITypeDescriptorContext context, global::System.Type sourceType)");
                 p.OpenScope();
                 {
-                    p.PrintLine("if (sourceType == s_wrapperType || sourceType == s_valueType) return true;");
+                    p.PrintLine("if (sourceType == s_wrapperType || sourceType == s_underlyingType) return true;");
                     p.PrintLine("return base.CanConvertFrom(context, sourceType);");
                 }
                 p.CloseScope();
@@ -1412,7 +1509,7 @@ namespace TypeWrap.SourceGen
                 p.PrintLine($"public override bool CanConvertTo(global::System.ComponentModel.ITypeDescriptorContext context, global::System.Type destinationType)");
                 p.OpenScope();
                 {
-                    p.PrintLine($"if (destinationType == s_wrapperType || destinationType == s_valueType) return true;");
+                    p.PrintLine($"if (destinationType == s_wrapperType || destinationType == s_underlyingType) return true;");
                     p.PrintLine($"return base.CanConvertTo(context, destinationType);");
                 }
                 p.CloseScope();
@@ -1446,7 +1543,7 @@ namespace TypeWrap.SourceGen
                     p.OpenScope();
                     {
                         p.PrintLine("if (destinationType == s_wrapperType) return wrappedValue;");
-                        p.PrintLine($"if (destinationType == s_valueType) return wrappedValue.{FieldName};");
+                        p.PrintLine($"if (destinationType == s_underlyingType) return wrappedValue.{FieldName};");
                     }
                     p.CloseScope();
 

@@ -173,7 +173,7 @@ namespace TypeWrap.SourceGen
             static bool TryGetWrapTypeInfo(TypeDeclarationSyntax syntax, out Candidate result)
             {
                 result = new Candidate {
-                    fieldName = "value",
+                    fieldName = string.Empty,
                 };
 
                 TypeSyntax fieldTypeSyntax = null;
