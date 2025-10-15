@@ -69,4 +69,14 @@ namespace TypeWrapTest
             private partial record struct NestedWrapper(int _);
         }
     }
+
+    public enum FruitKind
+    {
+        Apple,
+        Banana,
+        Orange
+    }
+
+    [WrapRecord]
+    public readonly partial record struct FruitKindValue(FruitKind _);
 }
