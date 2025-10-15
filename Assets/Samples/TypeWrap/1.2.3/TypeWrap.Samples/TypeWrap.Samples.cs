@@ -10,4 +10,14 @@ namespace TypeWrap.Samples
 
     [WrapRecord]
     public readonly partial record struct Coord2D(Vector2Int _);
+
+    public enum FruitKind
+    {
+        Apple,
+        Banana,
+        Orange
+    }
+
+    [WrapRecord]
+    public readonly partial record struct FruitValue(FruitKind _);
 }
