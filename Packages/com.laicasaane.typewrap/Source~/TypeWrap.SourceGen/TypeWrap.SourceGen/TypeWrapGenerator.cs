@@ -110,6 +110,7 @@ namespace TypeWrap.SourceGen
                                   candidate.syntax
                                 , candidate.symbol
                                 , candidate.typeName
+                                , candidate.typeNameWithTypeArgs
                                 , candidate.isStruct
                                 , candidate.isRefStruct
                                 , candidate.isRecord
@@ -140,6 +141,7 @@ namespace TypeWrap.SourceGen
                               candidate.syntax
                             , candidate.symbol
                             , candidate.typeName
+                            , candidate.typeNameWithTypeArgs
                             , candidate.isStruct
                             , candidate.isRefStruct
                             , candidate.isRecord
@@ -169,6 +171,7 @@ namespace TypeWrap.SourceGen
                                   candidate.syntax
                                 , candidate.symbol
                                 , candidate.typeName
+                                , candidate.typeNameWithTypeArgs
                                 , candidate.isStruct
                                 , candidate.isRefStruct
                                 , candidate.isRecord
@@ -382,7 +385,7 @@ namespace TypeWrap.SourceGen
 
             static void GetTypeName(TypeDeclarationSyntax syntax, ref Candidate candidate)
             {
-                var typeNameSb = new StringBuilder(syntax.Identifier.ValueText);
+                var typeNameWithTypeArgsBuilder = new StringBuilder(syntax.Identifier.ValueText);
 
                 if (syntax.TypeParameterList is TypeParameterListSyntax typeParamList
                     && typeParamList.Parameters.Count > 0
@@ -390,25 +393,26 @@ namespace TypeWrap.SourceGen
                 {
                     candidate.isGeneric = true;
 
-                    typeNameSb.Append("<");
+                    typeNameWithTypeArgsBuilder.Append("<");
 
                     var typeParams = typeParamList.Parameters;
                     var last = typeParams.Count - 1;
 
                     for (var i = 0; i <= last; i++)
                     {
-                        typeNameSb.Append(typeParams[i].Identifier.Text);
+                        typeNameWithTypeArgsBuilder.Append(typeParams[i].Identifier.Text);
 
                         if (i < last)
                         {
-                            typeNameSb.Append(", ");
+                            typeNameWithTypeArgsBuilder.Append(", ");
                         }
                     }
 
-                    typeNameSb.Append(">");
+                    typeNameWithTypeArgsBuilder.Append(">");
                 }
 
-                candidate.typeName = typeNameSb.ToString();
+                candidate.typeName = syntax.Identifier.ValueText;
+                candidate.typeNameWithTypeArgs = typeNameWithTypeArgsBuilder.ToString();
             }
 
             static void SetOtherFields(
@@ -495,6 +499,7 @@ namespace TypeWrap.SourceGen
             public TypeDeclarationSyntax syntax;
             public INamedTypeSymbol symbol;
             public string typeName;
+            public string typeNameWithTypeArgs;
             public bool isGeneric;
             public bool isStruct;
             public bool isRefStruct;
@@ -509,20 +514,25 @@ namespace TypeWrap.SourceGen
                 && symbol is { }
                 && fieldTypeSyntax is { }
                 && fieldTypeSymbol is { }
-                && string.IsNullOrEmpty(typeName)
+                && string.IsNullOrEmpty(typeName) == false
+                && string.IsNullOrEmpty(typeNameWithTypeArgs) == false
                 && fieldTypeSymbol.TypeKind != TypeKind.Dynamic;
 
             public readonly override bool Equals(object obj)
                 => obj is Candidate other && Equals(other);
 
             public readonly bool Equals(Candidate other)
-                => string.Equals(typeName, other.typeName, StringComparison.Ordinal)
+                => string.Equals(typeNameWithTypeArgs, other.typeNameWithTypeArgs, StringComparison.Ordinal)
                 && string.Equals(fieldTypeSymbol?.ToFullName() ?? string.Empty, other.fieldTypeSymbol?.ToFullName() ?? string.Empty)
                 && fieldTypeSymbol?.TypeKind == other.fieldTypeSymbol?.TypeKind
                 ;
 
             public readonly override int GetHashCode()
-                => HashValue.Combine(typeName, fieldTypeSymbol?.ToFullName() ?? string.Empty, fieldTypeSymbol?.TypeKind);
+                => HashValue.Combine(
+                      typeNameWithTypeArgs
+                    , fieldTypeSymbol?.ToFullName() ?? string.Empty
+                    , fieldTypeSymbol?.TypeKind
+                );
         }
     }
 }

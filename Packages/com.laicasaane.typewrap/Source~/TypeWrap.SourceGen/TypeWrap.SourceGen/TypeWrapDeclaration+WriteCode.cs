@@ -26,7 +26,7 @@ namespace TypeWrap.SourceGen
                 {
                     p.PrintBeginLine("[global::System.ComponentModel.TypeConverter(typeof(")
                         .Print(FullTypeName).Print(".")
-                        .Print(TypeName).PrintEndLine("TypeConverter))]");
+                        .Print(TypeNameWithTypeArgs).PrintEndLine("TypeConverter))]");
                 }
 
                 p.PrintBeginLine()
@@ -34,7 +34,7 @@ namespace TypeWrap.SourceGen
                     .Print("partial ")
                     .PrintIf(IsRecord, "record ")
                     .PrintIf(IsStruct, "struct ", "class ")
-                    .Print(TypeName);
+                    .Print(TypeNameWithTypeArgs);
 
                 if (IsRefStruct)
                 {
@@ -570,8 +570,10 @@ namespace TypeWrap.SourceGen
                 }
             }
 
+            var hasTypeConstraints = string.IsNullOrEmpty(method.typeParameterConstraints) == false;
+
             p.PrintEndLine(")");
-            p.PrintLine(method.typeParameterConstraints);
+            p.PrintLineIf(hasTypeConstraints, method.typeParameterConstraints);
             p = p.IncreasedIndent();
             {
                 p.PrintBeginLine("=> ");
@@ -659,7 +661,7 @@ namespace TypeWrap.SourceGen
                     p.PrintLine("=> obj switch");
                     p.OpenScope();
                     {
-                        p.PrintBeginLine(TypeName).PrintEndLine(" other => CompareTo(other),");
+                        p.PrintBeginLine(TypeNameWithTypeArgs).PrintEndLine(" other => CompareTo(other),");
                         p.PrintBeginLine(FieldTypeName).Print(" other => this.").Print(FieldName).PrintEndLine(".CompareTo(other),");
                         p.PrintLine("_ => 1,");
                     }
@@ -739,7 +741,7 @@ namespace TypeWrap.SourceGen
                     p.PrintLine("=> obj switch");
                     p.OpenScope();
                     {
-                        p.PrintBeginLine(TypeName).PrintEndLine(" other => Equals(other),");
+                        p.PrintBeginLine(TypeNameWithTypeArgs).PrintEndLine(" other => Equals(other),");
                         p.PrintBeginLine(FieldTypeName).Print(" other => this.").Print(FieldName).PrintEndLine(".Equals(other),");
                         p.PrintLine("_ => false,");
                     }
@@ -1249,7 +1251,7 @@ namespace TypeWrap.SourceGen
             }
 
             p.PrintLine(GENERATED_CODE).PrintLine(EXCLUDE_COVERAGE);
-            p.PrintLine($"private sealed class {TypeName}TypeConverter : global::System.ComponentModel.TypeConverter");
+            p.PrintLine($"private sealed class {TypeNameWithTypeArgs}TypeConverter : global::System.ComponentModel.TypeConverter");
             p.OpenScope();
             {
                 p.PrintLine($"private static readonly global::System.Type s_wrapperType = typeof({FullTypeName});");

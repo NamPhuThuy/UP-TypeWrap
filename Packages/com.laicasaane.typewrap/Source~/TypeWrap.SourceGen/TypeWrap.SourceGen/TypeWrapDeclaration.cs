@@ -27,6 +27,8 @@ namespace TypeWrap.SourceGen
 
         public string TypeName { get; }
 
+        public string TypeNameWithTypeArgs { get; }
+
         public string TypeNameIndentifier { get; }
 
         public string FullTypeName { get; }
@@ -82,6 +84,7 @@ namespace TypeWrap.SourceGen
               TypeDeclarationSyntax syntax
             , INamedTypeSymbol symbol
             , string typeName
+            , string typeNameWithTypeArgs
             , bool isStruct
             , bool isRefStruct
             , bool isRecord
@@ -98,6 +101,7 @@ namespace TypeWrap.SourceGen
 
             Syntax = syntax;
             TypeName = typeName;
+            TypeNameWithTypeArgs = typeNameWithTypeArgs;
             TypeNameIndentifier = symbol.ToValidIdentifier();
             FullTypeName = symbol.ToFullName();
             IsReadOnly = symbol.IsReadOnly;

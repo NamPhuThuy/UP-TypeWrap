@@ -14,6 +14,9 @@ namespace TypeWrapTest
         }
     }
 
+    [WrapType(typeof(int))]
+    public partial struct GenericType<T> { }
+
     [WrapRecord]
     public readonly partial record struct BoolWrapper(bool _)
     {
